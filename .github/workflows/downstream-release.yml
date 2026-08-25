@@ -21,9 +21,9 @@ jobs:
     steps:
       - name: Check out downstream branch
         run: |
-          gh repo clone "$GITHUB_REPOSITORY" .
           gh auth setup-git
-          git switch downstream
+          git clone --branch downstream --single-branch \
+            "https://github.com/${GITHUB_REPOSITORY}.git" .
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
