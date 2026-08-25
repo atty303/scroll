@@ -12,6 +12,13 @@
 
 extern struct sway_root *root;
 
+struct sway_view;
+
+struct sway_unmapped_view {
+	struct sway_view *view;
+	struct sway_container *container;
+};
+
 typedef bool (*sway_root_output_filter_func_t)(
 	struct sway_output *output, void *data);
 
@@ -125,6 +132,11 @@ struct sway_root {
 struct sway_root *root_create(struct wl_display *display);
 
 void root_destroy(struct sway_root *root);
+
+void root_add_unmapped_view(struct sway_view *view,
+	struct sway_container *container);
+void root_remove_unmapped_view(struct sway_view *view);
+void root_remove_unmapped_container(struct sway_container *container);
 
 /**
  * Move a container to the scratchpad.

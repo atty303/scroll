@@ -96,7 +96,7 @@ struct sway_root *root_create(struct wl_display *wl_display) {
 
 void root_destroy(struct sway_root *root) {
 	focus_ring_destroy(root->focus_ring);
-	list_free(root->unmapped_views);
+	list_free_items_and_destroy(root->unmapped_views);
 	space_destroy_all();
 	list_free(root->spaces);
 	list_free(root->scratchpad);
@@ -106,6 +106,38 @@ void root_destroy(struct sway_root *root) {
 	list_free_items_and_destroy(root->filters_list);
 	node_map_remove(&root->node);
 	free(root);
+}
+
+void root_add_unmapped_view(struct sway_view *view,
+		struct sway_container *container) {
+	root_remove_unmapped_view(view);
+	struct sway_unmapped_view *unmapped = calloc(1, sizeof(*unmapped));
+	if (!sway_assert(unmapped, "Unable to allocate unmapped view")) {
+		return;
+	}
+	unmapped->view = view;
+	unmapped->container = container;
+	list_add(root->unmapped_views, unmapped);
+}
+
+void root_remove_unmapped_view(struct sway_view *view) {
+	for (int i = root->unmapped_views->length - 1; i >= 0; --i) {
+		struct sway_unmapped_view *unmapped = root->unmapped_views->items[i];
+		if (unmapped->view == view) {
+			list_del(root->unmapped_views, i);
+			free(unmapped);
+		}
+	}
+}
+
+void root_remove_unmapped_container(struct sway_container *container) {
+	for (int i = root->unmapped_views->length - 1; i >= 0; --i) {
+		struct sway_unmapped_view *unmapped = root->unmapped_views->items[i];
+		if (unmapped->container == container) {
+			list_del(root->unmapped_views, i);
+			free(unmapped);
+		}
+	}
 }
 
 static void root_scratchpad_set_minimize(struct sway_container *con, bool minimize) {
