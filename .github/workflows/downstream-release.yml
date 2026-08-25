@@ -105,10 +105,7 @@ jobs:
             docker.io/library/archlinux@sha256:68bfc3b0d277b08a99101dc9b94aaa03e5ae70cf1b4fb965c03b2b87b915760d \
             bash -euc '
               pacman -Syu --needed --noconfirm base-devel cairo gdk-pixbuf2 json-c lcms2 libdisplay-info libegl libinput libxcb libxkbcommon meson pango pcre2 scdoc seatd wayland wayland-protocols xcb-util-image xcb-util-wm xorg-xwayland hwdata
-              meson setup wlroots-build subprojects/wlroots --prefix=/usr -Dexamples=false
-              ninja -C wlroots-build
-              ninja -C wlroots-build install
-              meson setup build --fatal-meson-warnings -Dauto_features=enabled -Dsd-bus-provider=libsystemd
+              meson setup build --fatal-meson-warnings -Dsd-bus-provider=libsystemd
               ninja -C build
             '
 
