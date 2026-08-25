@@ -1,0 +1,137 @@
+name: Update downstream release
+
+on:
+  schedule:
+    - cron: "31 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: downstream-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM_REPOSITORY: dawsers/scroll
+    steps:
+      - name: Check out downstream branch
+        run: |
+          gh repo clone "$GITHUB_REPOSITORY" .
+          gh auth setup-git
+          git switch downstream
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --force --no-tags upstream master:refs/remotes/upstream/master
+
+      - name: Resolve latest upstream release
+        id: resolve
+        run: |
+          upstream_tag=$(gh release view --repo "$UPSTREAM_REPOSITORY" --json tagName --jq .tagName)
+          if ! [[ "$upstream_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "unsupported upstream release tag: $upstream_tag" >&2
+            exit 1
+          fi
+          current_base=$(<.github/downstream-base)
+          if ! [[ "$current_base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "unsupported recorded base tag: $current_base" >&2
+            exit 1
+          fi
+          newest=$(printf '%s\n' "$current_base" "$upstream_tag" | sort -V | tail -n 1)
+          if [ "$newest" != "$upstream_tag" ]; then
+            echo "upstream latest release moved backward: $current_base -> $upstream_tag" >&2
+            exit 1
+          fi
+          git fetch --force --no-tags upstream \
+            "refs/tags/$current_base:refs/upstream/releases/$current_base"
+          if [ "$upstream_tag" != "$current_base" ]; then
+            git fetch --force --no-tags upstream \
+              "refs/tags/$upstream_tag:refs/upstream/releases/$upstream_tag"
+            git merge-base --is-ancestor \
+              "refs/upstream/releases/$current_base" \
+              "refs/upstream/releases/$upstream_tag"
+          fi
+          git merge-base --is-ancestor "refs/upstream/releases/$current_base" HEAD
+          echo "upstream_tag=$upstream_tag" >> "$GITHUB_OUTPUT"
+          echo "current_base=$current_base" >> "$GITHUB_OUTPUT"
+
+      - name: Merge new upstream release
+        if: steps.resolve.outputs.upstream_tag != steps.resolve.outputs.current_base
+        env:
+          UPSTREAM_TAG: ${{ steps.resolve.outputs.upstream_tag }}
+        run: |
+          git merge --no-ff --no-edit "refs/upstream/releases/$UPSTREAM_TAG"
+          printf '%s\n' "$UPSTREAM_TAG" > .github/downstream-base
+          git add .github/downstream-base
+          git commit -m "chore: base downstream on Scroll $UPSTREAM_TAG"
+
+      - name: Select downstream revision
+        id: revision
+        env:
+          UPSTREAM_TAG: ${{ steps.resolve.outputs.upstream_tag }}
+        run: |
+          existing_tag=$(git tag --points-at HEAD --list "$UPSTREAM_TAG-atty.*" | sort -V | tail -n 1)
+          if [ -n "$existing_tag" ] && gh release view "$existing_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "tag=$existing_tag" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$existing_tag" ]; then
+            downstream_tag=$existing_tag
+          else
+            latest_tag=$(git tag --list "$UPSTREAM_TAG-atty.*" | sort -V | tail -n 1)
+            if [ -n "$latest_tag" ]; then
+              revision=${latest_tag##*.}
+              revision=$((revision + 1))
+            else
+              revision=1
+            fi
+            downstream_tag="$UPSTREAM_TAG-atty.$revision"
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$downstream_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build downstream source
+        if: steps.revision.outputs.publish == 'true'
+        run: |
+          docker run --rm \
+            --volume "$PWD:/src" \
+            --workdir /src \
+            docker.io/library/archlinux@sha256:68bfc3b0d277b08a99101dc9b94aaa03e5ae70cf1b4fb965c03b2b87b915760d \
+            bash -euc '
+              pacman -Syu --needed --noconfirm base-devel cairo gdk-pixbuf2 json-c lcms2 libdisplay-info libegl libinput libxcb libxkbcommon meson pango pcre2 scdoc seatd wayland wayland-protocols xcb-util-image xcb-util-wm xorg-xwayland hwdata
+              meson setup build --fatal-meson-warnings -Dauto_features=enabled -Dsd-bus-provider=libsystemd
+              ninja -C build
+            '
+
+      - name: Publish downstream source release
+        if: steps.revision.outputs.publish == 'true'
+        env:
+          DOWNSTREAM_TAG: ${{ steps.revision.outputs.tag }}
+          UPSTREAM_TAG: ${{ steps.resolve.outputs.upstream_tag }}
+        run: |
+          source_commit=$(git rev-parse HEAD)
+          git push origin HEAD:downstream
+          if ! git show-ref --verify --quiet "refs/tags/$DOWNSTREAM_TAG"; then
+            git tag "$DOWNSTREAM_TAG"
+            git push origin "refs/tags/$DOWNSTREAM_TAG"
+          fi
+          if ! gh release view "$DOWNSTREAM_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf -v release_notes 'Upstream release: %s\nDownstream commit: %s' \
+              "$UPSTREAM_TAG" "$source_commit"
+            gh release create "$DOWNSTREAM_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$DOWNSTREAM_TAG" \
+              --notes "$release_notes"
+          fi
+          printf '### Published downstream Scroll release\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' \
+            "- Tag \`$DOWNSTREAM_TAG\`" \
+            "- Upstream \`$UPSTREAM_TAG\`" \
+            "- Commit \`$source_commit\`" \
+            >> "$GITHUB_STEP_SUMMARY"
