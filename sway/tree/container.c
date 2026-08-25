@@ -496,6 +496,10 @@ void container_destroy(struct sway_container *con) {
 	list_free(con->current.children);
 
 	list_free_items_and_destroy(con->marks);
+	int index = list_find(root->unmapped_containers, con);
+	if (index >= 0) {
+		list_del(root->unmapped_containers, index);
+	}
 
 	if (con->view && con->view->container == con) {
 		con->view->container = NULL;

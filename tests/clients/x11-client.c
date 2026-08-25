@@ -3,6 +3,27 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <time.h>
+
+static void sleep_ms(long milliseconds) {
+	struct timespec duration = {
+		.tv_sec = milliseconds / 1000,
+		.tv_nsec = milliseconds % 1000 * 1000000,
+	};
+	nanosleep(&duration, NULL);
+}
+
+static int wait_for_event(xcb_connection_t *conn, uint8_t event_type) {
+	xcb_generic_event_t *event;
+	while ((event = xcb_wait_for_event(conn))) {
+		uint8_t response_type = event->response_type & ~0x80;
+		free(event);
+		if (response_type == event_type) {
+			return 0;
+		}
+	}
+	return 1;
+}
 
 int main(int argc, char **argv) {
 	xcb_connection_t *conn = xcb_connect(NULL, NULL);
@@ -17,7 +38,7 @@ int main(int argc, char **argv) {
 	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
 	uint32_t values[2] = {
 		screen->white_pixel,
-		XCB_EVENT_MASK_EXPOSURE
+		XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY
 	};
 
 	xcb_create_window(conn, XCB_COPY_FROM_PARENT, win, screen->root,
@@ -50,6 +71,33 @@ int main(int argc, char **argv) {
 
 	xcb_map_window(conn, win);
 	xcb_flush(conn);
+	if (argc > 4 && strcmp(argv[4], "rapid-remap") == 0) {
+		if (wait_for_event(conn, XCB_MAP_NOTIFY)) {
+			xcb_disconnect(conn);
+			return 1;
+		}
+		sleep_ms(50);
+		for (int i = 0; i < 3; ++i) {
+			xcb_unmap_window(conn, win);
+			xcb_flush(conn);
+			if (wait_for_event(conn, XCB_UNMAP_NOTIFY)) {
+				xcb_disconnect(conn);
+				return 1;
+			}
+			sleep_ms(50);
+			xcb_map_window(conn, win);
+			xcb_flush(conn);
+			if (wait_for_event(conn, XCB_MAP_NOTIFY)) {
+				xcb_disconnect(conn);
+				return 1;
+			}
+			sleep_ms(50);
+		}
+		xcb_destroy_window(conn, win);
+		xcb_flush(conn);
+		xcb_disconnect(conn);
+		return 0;
+	}
 
 	while (1) {
 		xcb_generic_event_t *ev = xcb_wait_for_event(conn);

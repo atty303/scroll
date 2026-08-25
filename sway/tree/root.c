@@ -85,7 +85,7 @@ struct sway_root *root_create(struct wl_display *wl_display) {
 	root->overview = false;
 
 	root->spaces = create_list();
-	root->unmapped_views = create_list();
+	root->unmapped_containers = create_list();
 	root->focus_ring = focus_ring_create();
 
 	root->filters_list = create_list();
@@ -96,7 +96,7 @@ struct sway_root *root_create(struct wl_display *wl_display) {
 
 void root_destroy(struct sway_root *root) {
 	focus_ring_destroy(root->focus_ring);
-	list_free(root->unmapped_views);
+	list_free(root->unmapped_containers);
 	space_destroy_all();
 	list_free(root->spaces);
 	list_free(root->scratchpad);

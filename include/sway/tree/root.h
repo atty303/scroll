@@ -118,7 +118,7 @@ struct sway_root {
 	bool jumping;
 
 	list_t *spaces;
-	list_t *unmapped_views;
+	list_t *unmapped_containers;
 	struct sway_focus_ring *focus_ring;
 };
 

@@ -1778,13 +1778,10 @@ static void arrange_root(struct sway_root *root) {
 		}
 	}
 
-	for (int i = 0; i < root->unmapped_views->length; ++i) {
-		struct sway_view *view = root->unmapped_views->items[i];
-		struct sway_container *container = view->container;
-		if (container) {
-			wlr_scene_node_set_enabled(&container->scene_tree->node, true);
-			output_configure_scene(NULL, &container->scene_tree->node, 1);
-		}
+	for (int i = 0; i < root->unmapped_containers->length; ++i) {
+		struct sway_container *container = root->unmapped_containers->items[i];
+		wlr_scene_node_set_enabled(&container->scene_tree->node, true);
+		output_configure_scene(NULL, &container->scene_tree->node, 1);
 	}
 	arrange_popups(root->layers.popup);
 }
@@ -1816,21 +1813,18 @@ static void animate_root(struct sway_root *root) {
 			}
 		}
 	}
-	if (root->unmapped_views->length > 0) {
+	if (root->unmapped_containers->length > 0) {
 		double t;
 		animation_get_fade(ANIMATION_FADE_OUT, &t);
-		for (int i = 0; i < root->unmapped_views->length; ++i) {
-			struct sway_view *view = root->unmapped_views->items[i];
-			struct sway_container *container = view->container;
-			if (container) {
-				animation_set_animation_enabled(true);
-				container->animation.at = linear_scale(container->animation.a0, container->animation.a1, t);
-				const float old_alpha =container->pending.alpha;
-				container->pending.alpha = container->animation.at;
-				container_update(container);
-				container->pending.alpha = old_alpha;
-				view_reconfigure(view);
-			}
+		for (int i = 0; i < root->unmapped_containers->length; ++i) {
+			struct sway_container *container = root->unmapped_containers->items[i];
+			animation_set_animation_enabled(true);
+			container->animation.at = linear_scale(container->animation.a0, container->animation.a1, t);
+			const float old_alpha =container->pending.alpha;
+			container->pending.alpha = container->animation.at;
+			container_update(container);
+			container->pending.alpha = old_alpha;
+			view_reconfigure(container->view);
 		}
 	}
 	arrange_popups(root->layers.popup);
@@ -2402,9 +2396,9 @@ static void save_animation_variables() {
 	struct sway_container *fs = root->fullscreen_global;
 
 	if (!fs) {
-		for (int j = 0; j < root->unmapped_views->length; ++j) {
-			struct sway_view *view = root->unmapped_views->items[j];
-			container_save_animation_variables(view->container);
+		for (int j = 0; j < root->unmapped_containers->length; ++j) {
+			struct sway_container *container = root->unmapped_containers->items[j];
+			container_save_animation_variables(container);
 		}
 		for (int j = 0; j < root->outputs->length; j++) {
 			struct sway_output *output = root->outputs->items[j];
